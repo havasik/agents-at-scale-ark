@@ -6,6 +6,8 @@ import (
 	"context"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,6 +16,12 @@ import (
 
 	arkv1alpha1 "mckinsey.com/ark/api/v1alpha1"
 	"mckinsey.com/ark/internal/genai"
+)
+
+const (
+	// Condition types
+	ModelReady       = "Ready"
+	ModelDiscovering = "Discovering"
 )
 
 type ModelReconciler struct {
@@ -31,52 +39,65 @@ type ModelReconciler struct {
 
 func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	var obj arkv1alpha1.Model
-	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
+
+	var model arkv1alpha1.Model
+	if err := r.Get(ctx, req.NamespacedName, &model); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			log.Error(err, "unable to fetch model", "model", req.NamespacedName)
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	switch obj.Status.Phase {
-	case statusReady, statusError:
-		return ctrl.Result{}, nil
-	case statusRunning:
-		recorder := genai.NewModelRecorder(&obj, r.Recorder)
-
-		// Create operation tracker for model resolution
-		modelTracker := genai.NewOperationTracker(recorder, ctx, "ModelResolve", obj.Name, map[string]string{
-			"namespace": obj.Namespace,
-			"modelName": obj.Spec.Model.Value,
-		})
-
-		if err := r.reconcileModel(ctx, obj); err != nil {
-			log.Info("model error", "error", err.Error())
-			modelTracker.Fail(err)
-			if err := r.updateStatus(ctx, obj, statusError); err != nil {
-				return ctrl.Result{}, err
-			}
-		} else {
-			modelTracker.Complete("resolved")
-			if err := r.updateStatus(ctx, obj, statusReady); err != nil {
-				return ctrl.Result{}, err
-			}
-
-		}
-	default:
-		if err := r.updateStatus(ctx, obj, statusRunning); err != nil {
+	// Initialize conditions if empty
+	if len(model.Status.Conditions) == 0 {
+		r.setCondition(&model, ModelReady, metav1.ConditionFalse, "Initializing", "Model is being initialized")
+		r.setCondition(&model, ModelDiscovering, metav1.ConditionTrue, "StartingValidation", "Starting model validation process")
+		if err := r.updateStatus(ctx, &model); err != nil {
 			return ctrl.Result{}, err
 		}
+		// Return early to avoid double reconciliation, let the status update trigger next reconcile
+		return ctrl.Result{}, nil
 	}
-	return ctrl.Result{}, nil
+
+	return r.processModel(ctx, model)
 }
 
-func (r *ModelReconciler) reconcileModel(ctx context.Context, obj arkv1alpha1.Model) error {
+func (r *ModelReconciler) processModel(ctx context.Context, model arkv1alpha1.Model) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	logf.FromContext(ctx).Info("model validation started", "model", model.Name, "namespace", model.Namespace)
+
+	// Set discovering condition to true when starting validation
+	r.setCondition(&model, ModelDiscovering, metav1.ConditionTrue, "ValidatingModel", "Validating model configuration and connectivity")
+
+	// Process model resolution
+	recorder := genai.NewModelRecorder(&model, r.Recorder)
+
+	// Create operation tracker for model resolution
+	modelTracker := genai.NewOperationTracker(recorder, ctx, "ModelResolve", model.Name, map[string]string{
+		"namespace": model.Namespace,
+		"modelName": model.Spec.Model.Value,
+	})
+
+	if err := r.validateModel(ctx, model); err != nil {
+		log.Error(err, "model validation failed", "model", model.Name)
+		modelTracker.Fail(err)
+		r.setCondition(&model, ModelReady, metav1.ConditionFalse, "ModelResolutionFailed", err.Error())
+		r.setCondition(&model, ModelDiscovering, metav1.ConditionFalse, "ValidationFailed", "Model validation failed")
+		if err := r.updateStatus(ctx, &model); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: model.Spec.PollInterval.Duration}, nil
+	}
+
+	modelTracker.Complete("resolved")
+	return r.finalizeModelProcessing(ctx, model)
+}
+
+func (r *ModelReconciler) validateModel(ctx context.Context, model arkv1alpha1.Model) error {
 	resolvedModel, err := genai.LoadModel(ctx, r.Client, &arkv1alpha1.AgentModelRef{
-		Name:      obj.Name,
-		Namespace: obj.Namespace,
-	}, obj.Namespace)
+		Name:      model.Name,
+		Namespace: model.Namespace,
+	}, model.Namespace)
 	if err != nil {
 		return err
 	}
@@ -89,14 +110,38 @@ func (r *ModelReconciler) reconcileModel(ctx context.Context, obj arkv1alpha1.Mo
 	return err
 }
 
-func (r *ModelReconciler) updateStatus(ctx context.Context, obj arkv1alpha1.Model, status string) error {
+func (r *ModelReconciler) finalizeModelProcessing(ctx context.Context, model arkv1alpha1.Model) (ctrl.Result, error) {
+	r.setCondition(&model, ModelDiscovering, metav1.ConditionFalse, "ValidationComplete", "Model validation completed successfully")
+	r.setCondition(&model, ModelReady, metav1.ConditionTrue, "ModelResolved", "Model successfully resolved and validated")
+	if err := r.updateStatus(ctx, &model); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logf.FromContext(ctx).Info("model validation completed", "model", model.Name, "namespace", model.Namespace)
+
+	// Return with requeue interval for continuous polling
+	return ctrl.Result{RequeueAfter: model.Spec.PollInterval.Duration}, nil
+}
+
+// setCondition sets a condition on the Model
+func (r *ModelReconciler) setCondition(model *arkv1alpha1.Model, conditionType string, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&model.Status.Conditions, metav1.Condition{
+		Type:               conditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: model.Generation,
+	})
+}
+
+// updateStatus updates the Model status
+func (r *ModelReconciler) updateStatus(ctx context.Context, model *arkv1alpha1.Model) error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	obj.Status.Phase = status
-	err := r.Status().Update(ctx, &obj)
+	err := r.Status().Update(ctx, model)
 	if err != nil {
-		logf.FromContext(ctx).Error(err, "failed to update model status", "status", status)
+		logf.FromContext(ctx).Error(err, "failed to update model status")
 	}
 	return err
 }
