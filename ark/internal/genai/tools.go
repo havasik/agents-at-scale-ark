@@ -35,7 +35,7 @@ type HTTPExecutor struct {
 }
 
 // Execute implements ToolExecutor interface for HTTP tools
-func (h *HTTPExecutor) Execute(ctx context.Context, call ToolCall) (ToolResult, error) {
+func (h *HTTPExecutor) Execute(ctx context.Context, call ToolCall, recorder EventEmitter) (ToolResult, error) {
 	// Parse arguments
 	var arguments map[string]any
 	if call.Function.Arguments != "" {
@@ -225,7 +225,7 @@ func (tr *ToolRegistry) GetToolType(toolName string) string {
 	}
 }
 
-func (tr *ToolRegistry) ExecuteTool(ctx context.Context, call ToolCall) (ToolResult, error) {
+func (tr *ToolRegistry) ExecuteTool(ctx context.Context, call ToolCall, recorder EventEmitter) (ToolResult, error) {
 	executor, exists := tr.executors[call.Function.Name]
 	if !exists {
 		return ToolResult{
@@ -235,7 +235,7 @@ func (tr *ToolRegistry) ExecuteTool(ctx context.Context, call ToolCall) (ToolRes
 		}, fmt.Errorf("tool %s not found", call.Function.Name)
 	}
 
-	return executor.Execute(ctx, call)
+	return executor.Execute(ctx, call, recorder)
 }
 
 func (tr *ToolRegistry) ToOpenAITools() []openai.ChatCompletionToolParam {
@@ -256,9 +256,22 @@ func (tr *ToolRegistry) ToOpenAITools() []openai.ChatCompletionToolParam {
 	return tools
 }
 
+// GetMCPPool returns the MCP client pool for this tool registry
+func (tr *ToolRegistry) GetMCPPool() *MCPClientPool {
+	return tr.mcpPool
+}
+
+// Close closes all MCP client connections in the tool registry
+func (tr *ToolRegistry) Close() error {
+	if tr.mcpPool != nil {
+		return tr.mcpPool.Close()
+	}
+	return nil
+}
+
 type NoopExecutor struct{}
 
-func (n *NoopExecutor) Execute(ctx context.Context, call ToolCall) (ToolResult, error) {
+func (n *NoopExecutor) Execute(ctx context.Context, call ToolCall, recorder EventEmitter) (ToolResult, error) {
 	var arguments map[string]any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &arguments); err != nil {
 		logf.Log.Info("Error parsing tool arguments", "ToolCall", call)
@@ -289,7 +302,7 @@ func GetNoopTool() ToolDefinition {
 
 type TerminateExecutor struct{}
 
-func (t *TerminateExecutor) Execute(ctx context.Context, call ToolCall) (ToolResult, error) {
+func (t *TerminateExecutor) Execute(ctx context.Context, call ToolCall, recorder EventEmitter) (ToolResult, error) {
 	var arguments map[string]any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &arguments); err != nil {
 		logf.Log.Info("Error parsing tool arguments", "ToolCall", call)
