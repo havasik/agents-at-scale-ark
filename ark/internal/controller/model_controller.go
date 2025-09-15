@@ -64,15 +64,10 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 func (r *ModelReconciler) processModel(ctx context.Context, model arkv1alpha1.Model) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	logf.FromContext(ctx).Info("model validation started", "model", model.Name, "namespace", model.Namespace)
+	log.Info("model validation started", "model", model.Name, "namespace", model.Namespace)
 
-	// Set discovering condition to true when starting validation
-	r.setCondition(&model, ModelDiscovering, metav1.ConditionTrue, "ValidatingModel", "Validating model configuration and connectivity")
-
-	// Process model resolution
 	recorder := genai.NewModelRecorder(&model, r.Recorder)
 
-	// Create operation tracker for model resolution
 	modelTracker := genai.NewOperationTracker(recorder, ctx, "ModelResolve", model.Name, map[string]string{
 		"namespace": model.Namespace,
 		"modelName": model.Spec.Model.Value,
@@ -80,16 +75,16 @@ func (r *ModelReconciler) processModel(ctx context.Context, model arkv1alpha1.Mo
 
 	if err := r.validateModel(ctx, model); err != nil {
 		log.Error(err, "model validation failed", "model", model.Name)
-		modelTracker.Fail(err)
 		r.setCondition(&model, ModelReady, metav1.ConditionFalse, "ModelResolutionFailed", err.Error())
 		r.setCondition(&model, ModelDiscovering, metav1.ConditionFalse, "ValidationFailed", "Model validation failed")
+		modelTracker.Fail(err)
 		if err := r.updateStatus(ctx, &model); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: model.Spec.PollInterval.Duration}, nil
 	}
-
 	modelTracker.Complete("resolved")
+
 	return r.finalizeModelProcessing(ctx, model)
 }
 
@@ -139,6 +134,7 @@ func (r *ModelReconciler) updateStatus(ctx context.Context, model *arkv1alpha1.M
 	if ctx.Err() != nil {
 		return nil
 	}
+
 	err := r.Status().Update(ctx, model)
 	if err != nil {
 		logf.FromContext(ctx).Error(err, "failed to update model status")
