@@ -71,6 +71,3 @@ changelog:
       order: 1
     - title: Others
       order: 999
-
-# Release section removed - handled by CI/CD workflow
-# The CI/CD workflow builds binaries and uploads them to the existing release
