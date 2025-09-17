@@ -25,18 +25,16 @@ def _determine_model_status(status: dict) -> str:
     """Determine model status from Kubernetes conditions."""
     conditions = status.get("conditions", [])
 
-    discovering = None
-    ready = None
+    model_available = None
     for condition in conditions:
-        if condition.get("type") == "Discovering":
-            discovering = condition.get("status")
-        elif condition.get("type") == "Ready":
-            ready = condition.get("status")
+        if condition.get("type") == "ModelAvailable":
+            model_available = condition.get("status")
+            break
 
-    if discovering == "False" and ready == "False":
-        return "error"
-    elif discovering == "False" and ready == "True":
+    if model_available == "True":
         return "ready"
+    elif model_available == "False":
+        return "error"
     else:
         return "pending"
 

@@ -18,8 +18,8 @@ spec:
     - jsonPath: .spec.model.value
       name: Model
       type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
-      name: Ready
+    - jsonPath: .status.conditions[?(@.type=="ModelAvailable")].status
+      name: Available
       type: string
     - jsonPath: .spec.type
       name: Type

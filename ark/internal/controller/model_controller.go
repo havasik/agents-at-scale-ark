@@ -20,8 +20,7 @@ import (
 
 const (
 	// Condition types
-	ModelReady       = "Ready"
-	ModelDiscovering = "Discovering"
+	ModelAvailable = "ModelAvailable"
 )
 
 type ModelReconciler struct {
@@ -50,8 +49,7 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	// Initialize conditions if empty
 	if len(model.Status.Conditions) == 0 {
-		r.setCondition(&model, ModelReady, metav1.ConditionFalse, "Initializing", "Model is being initialized")
-		r.setCondition(&model, ModelDiscovering, metav1.ConditionTrue, "StartingValidation", "Starting model validation process")
+		r.setCondition(&model, ModelAvailable, metav1.ConditionUnknown, "Initializing", "Model availability is being determined")
 		if err := r.updateStatus(ctx, &model); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -64,31 +62,30 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 func (r *ModelReconciler) processModel(ctx context.Context, model arkv1alpha1.Model) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	log.Info("model validation started", "model", model.Name, "namespace", model.Namespace)
+	log.Info("model probing started", "model", model.Name, "namespace", model.Namespace)
 
 	recorder := genai.NewModelRecorder(&model, r.Recorder)
 
-	modelTracker := genai.NewOperationTracker(recorder, ctx, "ModelResolve", model.Name, map[string]string{
+	modelTracker := genai.NewOperationTracker(recorder, ctx, "ModelProbe", model.Name, map[string]string{
 		"namespace": model.Namespace,
 		"modelName": model.Spec.Model.Value,
 	})
 
-	if err := r.validateModel(ctx, model); err != nil {
-		log.Error(err, "model validation failed", "model", model.Name)
-		r.setCondition(&model, ModelReady, metav1.ConditionFalse, "ModelResolutionFailed", err.Error())
-		r.setCondition(&model, ModelDiscovering, metav1.ConditionFalse, "ValidationFailed", "Model validation failed")
+	if err := r.probeModel(ctx, model); err != nil {
+		log.Error(err, "model probing failed", "model", model.Name)
+		r.setCondition(&model, ModelAvailable, metav1.ConditionFalse, "ProbeFailed", err.Error())
 		modelTracker.Fail(err)
 		if err := r.updateStatus(ctx, &model); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: model.Spec.PollInterval.Duration}, nil
 	}
-	modelTracker.Complete("resolved")
+	modelTracker.Complete("probed")
 
 	return r.finalizeModelProcessing(ctx, model)
 }
 
-func (r *ModelReconciler) validateModel(ctx context.Context, model arkv1alpha1.Model) error {
+func (r *ModelReconciler) probeModel(ctx context.Context, model arkv1alpha1.Model) error {
 	resolvedModel, err := genai.LoadModel(ctx, r.Client, &arkv1alpha1.AgentModelRef{
 		Name:      model.Name,
 		Namespace: model.Namespace,
@@ -97,22 +94,21 @@ func (r *ModelReconciler) validateModel(ctx context.Context, model arkv1alpha1.M
 		return err
 	}
 
-	validationCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	probeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	testMessages := []genai.Message{genai.NewUserMessage("Hello")}
-	_, err = resolvedModel.ChatCompletion(validationCtx, testMessages, nil)
+	_, err = resolvedModel.ChatCompletion(probeCtx, testMessages, nil)
 	return err
 }
 
 func (r *ModelReconciler) finalizeModelProcessing(ctx context.Context, model arkv1alpha1.Model) (ctrl.Result, error) {
-	r.setCondition(&model, ModelDiscovering, metav1.ConditionFalse, "ValidationComplete", "Model validation completed successfully")
-	r.setCondition(&model, ModelReady, metav1.ConditionTrue, "ModelResolved", "Model successfully resolved and validated")
+	r.setCondition(&model, ModelAvailable, metav1.ConditionTrue, "Available", "Model is available and probed successfully")
 	if err := r.updateStatus(ctx, &model); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	logf.FromContext(ctx).Info("model validation completed", "model", model.Name, "namespace", model.Namespace)
+	logf.FromContext(ctx).Info("model probing completed", "model", model.Name, "namespace", model.Namespace)
 
 	// Return with requeue interval for continuous polling
 	return ctrl.Result{RequeueAfter: model.Spec.PollInterval.Duration}, nil

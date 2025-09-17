@@ -894,8 +894,7 @@ class TestModelsEndpoint(unittest.TestCase):
                 "model": {"value": "gpt-4"}
             },
             "status": {"conditions": [
-                {"type": "Ready", "status": "True"},
-                {"type": "Discovering", "status": "False"},
+                {"type": "ModelAvailable", "status": "True"}
             ]}
         }
         
@@ -907,8 +906,7 @@ class TestModelsEndpoint(unittest.TestCase):
                 "model": {"value": "anthropic.claude-v2"}
             },
             "status": {"conditions": [
-                {"type": "Ready", "status": "False"},
-                {"type": "Discovering", "status": "True"}
+                {"type": "ModelAvailable", "status": "False"}
             ]}
         }
         
@@ -934,7 +932,7 @@ class TestModelsEndpoint(unittest.TestCase):
         self.assertEqual(data["items"][1]["name"], "claude-model")
         self.assertEqual(data["items"][1]["type"], "bedrock")
         self.assertEqual(data["items"][1]["model"], "anthropic.claude-v2")
-        self.assertEqual(data["items"][1]["status"], "pending")
+        self.assertEqual(data["items"][1]["status"], "error")
     
     @patch('ark_api.api.v1.models.with_ark_client')
     def test_list_models_empty(self, mock_ark_client):
@@ -1128,8 +1126,7 @@ class TestModelsEndpoint(unittest.TestCase):
             },
             "status": {
                 "conditions": [
-                    {"type": "Ready", "status": "True"}, 
-                    {"type": "Discovering", "status": "False"}
+                    {"type": "ModelAvailable", "status": "True"}
                 ],
                 "resolvedAddress": "https://api.openai.com/v1"
             }
