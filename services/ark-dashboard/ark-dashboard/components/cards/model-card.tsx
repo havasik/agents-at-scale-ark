@@ -47,9 +47,6 @@ export function ModelCard({
   );
   const isActive = agentsUsingModel.length > 0;
 
-  // Check if model has an error status
-  const hasError = model.status?.toLowerCase() === "error";
-
   let bgColor = "bg-gray-100";
   let textColor = "text-gray-800";
   let statusText = "Pending";
