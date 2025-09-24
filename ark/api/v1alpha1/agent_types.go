@@ -50,6 +50,7 @@ type AgentSpec struct {
 	Prompt      string `json:"prompt,omitempty"`
 	Description string `json:"description,omitempty"`
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={name:"default"}
 	ModelRef *AgentModelRef `json:"modelRef,omitempty"`
 	// +kubebuilder:validation:Optional
 	// ExecutionEngine to use for running this agent. If not specified, uses the built-in OpenAI-compatible engine

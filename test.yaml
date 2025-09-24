@@ -1,0 +1,18 @@
+apiVersion: ark.mckinsey.com/v1alpha1
+kind: Tool
+metadata:
+  name: mcp-filesys-read-file
+spec:
+  type: http
+  inputSchema:
+    type: object
+    properties:
+      city:
+        type: string
+        description: City name to get coordinates for
+    required: ["city"]
+  description: "Returns coordinates for the given city name"
+  http:
+    url: https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1
+    method: GET
+    timeout: 30s
