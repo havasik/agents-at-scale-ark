@@ -49,6 +49,7 @@ func createHTTPClient(baseURL string, headers map[string]string) (*mcpclient.Cli
 
 	if len(headers) > 0 {
 		opts = append(opts, transport.WithHTTPHeaders(headers))
+		opts = append(opts, transport.WithContinuousListening())
 	}
 
 	mcpClient, err := mcpclient.NewStreamableHttpClient(baseURL, opts...)
