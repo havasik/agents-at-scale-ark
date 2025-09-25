@@ -401,29 +401,15 @@ func getDefaultToolDescription(toolCRD *arkv1alpha1.Tool) string {
 			return fmt.Sprintf("HTTP request to %s", toolCRD.Spec.HTTP.URL)
 		}
 	case ToolTypeBuiltin:
-		return getBuiltinToolDescription(toolCRD.Name)
+		// For builtin tools, use the description from the CRD itself
+		return fmt.Sprintf("Built-in tool: %s", toolCRD.Name)
 	default:
 		return fmt.Sprintf("Custom tool: %s", toolCRD.Name)
 	}
 	return fmt.Sprintf("Custom tool: %s", toolCRD.Name)
 }
 
-func getBuiltinToolDescription(name string) string {
-	switch name {
-	case BuiltinToolNoop:
-		return GetNoopTool().Description
-	case BuiltinToolTerminate:
-		return GetTerminateTool().Description
-	default:
-		return fmt.Sprintf("Built-in tool: %s", name)
-	}
-}
-
 func getToolParameters(toolCRD *arkv1alpha1.Tool) map[string]any {
-	if toolCRD.Spec.Type == ToolTypeBuiltin {
-		return getBuiltinToolParameters(toolCRD.Name)
-	}
-
 	parameters := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
@@ -436,20 +422,6 @@ func getToolParameters(toolCRD *arkv1alpha1.Tool) map[string]any {
 	}
 
 	return parameters
-}
-
-func getBuiltinToolParameters(name string) map[string]any {
-	switch name {
-	case BuiltinToolNoop:
-		return GetNoopTool().Parameters
-	case BuiltinToolTerminate:
-		return GetTerminateTool().Parameters
-	default:
-		return map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		}
-	}
 }
 
 func CreateHTTPTool(toolCRD *arkv1alpha1.Tool) ToolDefinition {

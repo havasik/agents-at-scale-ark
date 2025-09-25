@@ -63,32 +63,6 @@ func (r *ToolRegistry) registerTools(ctx context.Context, k8sClient client.Clien
 	return nil
 }
 
-func (r *ToolRegistry) getToolCRD(ctx context.Context, k8sClient client.Client, name, namespace string) (*arkv1alpha1.Tool, error) {
-	obj := &arkv1alpha1.Tool{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
-	if err := k8sClient.Get(ctx, key, obj); err != nil {
-		return nil, fmt.Errorf("failed to load tool %v", key)
-	}
-	return obj, nil
-}
-
-func (r *ToolRegistry) registerCustomTool(ctx context.Context, k8sClient client.Client, agentTool arkv1alpha1.AgentTool, namespace string) error {
-	if agentTool.Name == "" {
-		return fmt.Errorf("name must be specified for custom tool")
-	}
-
-	tool, err := r.getToolCRD(ctx, k8sClient, agentTool.Name, namespace)
-	if err != nil {
-		return err
-	}
-
-	if err := r.registerSingleCustomTool(ctx, k8sClient, *tool, namespace, agentTool.Functions); err != nil {
-		return fmt.Errorf("failed to register tool %s: %w", tool.Name, err)
-	}
-
-	return nil
-}
-
 func CreateToolExecutor(ctx context.Context, k8sClient client.Client, tool *arkv1alpha1.Tool, namespace string, mcpPool *MCPClientPool) (ToolExecutor, error) {
 	switch tool.Spec.Type {
 	case ToolTypeHTTP:
@@ -197,42 +171,21 @@ func createMCPExecutor(ctx context.Context, k8sClient client.Client, tool *arkv1
 	}, nil
 }
 
-func (r *ToolRegistry) registerSingleCustomTool(ctx context.Context, k8sClient client.Client, tool arkv1alpha1.Tool, namespace string, functions []arkv1alpha1.ToolFunction) error {
-	toolDef := CreateToolFromCRD(&tool)
-	executor, err := CreateToolExecutor(ctx, k8sClient, &tool, namespace, r.mcpPool)
-	if err != nil {
-		return err
+func (r *ToolRegistry) registerTool(ctx context.Context, k8sClient client.Client, agentTool arkv1alpha1.AgentTool, namespace string) error {
+	tool := &arkv1alpha1.Tool{}
+	key := client.ObjectKey{Name: agentTool.Name, Namespace: namespace}
+
+	if err := k8sClient.Get(ctx, key, tool); err != nil {
+		return fmt.Errorf("failed to get tool %s: %w", agentTool.Name, err)
 	}
 
-	if len(functions) > 0 {
-		executor = &FilteredToolExecutor{
-			BaseExecutor: executor,
-			Functions:    functions,
-		}
+	toolDef := CreateToolFromCRD(tool)
+	executor, err := CreateToolExecutor(ctx, k8sClient, tool, namespace, r.mcpPool)
+	if err != nil {
+		return fmt.Errorf("failed to create executor for tool %s: %w", agentTool.Name, err)
 	}
 
 	r.RegisterTool(toolDef, executor)
-	return nil
-}
-
-func (r *ToolRegistry) registerTool(ctx context.Context, k8sClient client.Client, agentTool arkv1alpha1.AgentTool, namespace string) error {
-	switch agentTool.Type {
-	case AgentToolTypeBuiltIn:
-		switch agentTool.Name {
-		case BuiltinToolNoop:
-			r.RegisterTool(GetNoopTool(), &NoopExecutor{})
-		case BuiltinToolTerminate:
-			r.RegisterTool(GetTerminateTool(), &TerminateExecutor{})
-		default:
-			return fmt.Errorf("unsupported built-in tool %s", agentTool.Name)
-		}
-	case AgentToolTypeCustom:
-		if err := r.registerCustomTool(ctx, k8sClient, agentTool, namespace); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported tool type %s %s", agentTool.Type, agentTool.Name)
-	}
 	return nil
 }
 
