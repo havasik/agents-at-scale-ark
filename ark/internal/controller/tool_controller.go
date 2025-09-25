@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -78,14 +77,13 @@ func (b *builtinToolInitializer) Start(ctx context.Context) error {
 }
 
 func (b *builtinToolInitializer) ensureBuiltinToolsExist(ctx context.Context) error {
-	log := logf.FromContext(ctx)
 	builtinTools := []genai.ToolDefinition{
 		genai.GetNoopTool(),
 		genai.GetTerminateTool(),
 	}
 
 	for _, builtinTool := range builtinTools {
-		if err := b.ensureSingleBuiltinTool(ctx, log, builtinTool.Name, builtinTool.Description, builtinTool.Parameters); err != nil {
+		if err := b.ensureSingleBuiltinTool(ctx, builtinTool.Name, builtinTool.Description, builtinTool.Parameters); err != nil {
 			return err
 		}
 	}
@@ -93,7 +91,8 @@ func (b *builtinToolInitializer) ensureBuiltinToolsExist(ctx context.Context) er
 	return nil
 }
 
-func (b *builtinToolInitializer) ensureSingleBuiltinTool(ctx context.Context, log logr.Logger, name, description string, parameters map[string]any) error {
+func (b *builtinToolInitializer) ensureSingleBuiltinTool(ctx context.Context, name, description string, parameters map[string]any) error {
+	log := logf.FromContext(ctx)
 	log.Info("ensuring built-in tool exists", "tool", name)
 
 	tool := &arkv1alpha1.Tool{}
