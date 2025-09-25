@@ -185,6 +185,14 @@ func (r *ToolRegistry) registerTool(ctx context.Context, k8sClient client.Client
 		return fmt.Errorf("failed to create executor for tool %s: %w", agentTool.Name, err)
 	}
 
+	// Apply function filtering if specified
+	if len(agentTool.Functions) > 0 {
+		executor = &FilteredToolExecutor{
+			BaseExecutor: executor,
+			Functions:    agentTool.Functions,
+		}
+	}
+
 	r.RegisterTool(toolDef, executor)
 	return nil
 }
