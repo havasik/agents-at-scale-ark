@@ -79,42 +79,13 @@ func (b *builtinToolInitializer) Start(ctx context.Context) error {
 
 func (b *builtinToolInitializer) ensureBuiltinToolsExist(ctx context.Context) error {
 	log := logf.FromContext(ctx)
-	builtinTools := []struct {
-		name        string
-		description string
-		parameters  map[string]any
-	}{
-		{
-			name:        genai.BuiltinToolNoop,
-			description: "A no-operation tool that does nothing and returns success",
-			parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"message": map[string]any{
-						"type":        "string",
-						"description": "Optional message to include in the response",
-					},
-				},
-			},
-		},
-		{
-			name:        genai.BuiltinToolTerminate,
-			description: "Use this function to provide a final response to the user and then end the current conversation",
-			parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"response": map[string]any{
-						"type":        "string",
-						"description": "The message to send before ending the conversation",
-					},
-				},
-				"required": []string{"response"},
-			},
-		},
+	builtinTools := []genai.ToolDefinition{
+		genai.GetNoopTool(),
+		genai.GetTerminateTool(),
 	}
 
 	for _, builtinTool := range builtinTools {
-		if err := b.ensureSingleBuiltinTool(ctx, log, builtinTool.name, builtinTool.description, builtinTool.parameters); err != nil {
+		if err := b.ensureSingleBuiltinTool(ctx, log, builtinTool.Name, builtinTool.Description, builtinTool.Parameters); err != nil {
 			return err
 		}
 	}

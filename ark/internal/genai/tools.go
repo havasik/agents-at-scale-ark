@@ -411,9 +411,9 @@ func getDefaultToolDescription(toolCRD *arkv1alpha1.Tool) string {
 func getBuiltinToolDescription(name string) string {
 	switch name {
 	case BuiltinToolNoop:
-		return "A no-operation tool that does nothing and returns success"
+		return GetNoopTool().Description
 	case BuiltinToolTerminate:
-		return "Use this function to provide a final response to the user and then end the current conversation"
+		return GetTerminateTool().Description
 	default:
 		return fmt.Sprintf("Built-in tool: %s", name)
 	}
