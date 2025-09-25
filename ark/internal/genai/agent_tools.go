@@ -97,6 +97,8 @@ func CreateToolExecutor(ctx context.Context, k8sClient client.Client, tool *arkv
 		return createMCPExecutor(ctx, k8sClient, tool, namespace, mcpPool)
 	case ToolTypeAgent:
 		return createAgentExecutor(ctx, k8sClient, tool, namespace)
+	case ToolTypeBuiltin:
+		return createBuiltinExecutor(tool)
 	default:
 		return nil, fmt.Errorf("unsupported tool type %s for tool %s", tool.Spec.Type, tool.Name)
 	}
@@ -119,6 +121,17 @@ func createAgentExecutor(ctx context.Context, k8sClient client.Client, tool *ark
 		AgentCRD:  agentCRD,
 		k8sClient: k8sClient,
 	}, nil
+}
+
+func createBuiltinExecutor(tool *arkv1alpha1.Tool) (ToolExecutor, error) {
+	switch tool.Name {
+	case BuiltinToolNoop:
+		return &NoopExecutor{}, nil
+	case BuiltinToolTerminate:
+		return &TerminateExecutor{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported builtin tool %s", tool.Name)
+	}
 }
 
 func createHTTPExecutor(k8sClient client.Client, tool *arkv1alpha1.Tool, namespace string) (ToolExecutor, error) {
@@ -206,9 +219,9 @@ func (r *ToolRegistry) registerTool(ctx context.Context, k8sClient client.Client
 	switch agentTool.Type {
 	case AgentToolTypeBuiltIn:
 		switch agentTool.Name {
-		case "noop":
+		case BuiltinToolNoop:
 			r.RegisterTool(GetNoopTool(), &NoopExecutor{})
-		case "terminate":
+		case BuiltinToolTerminate:
 			r.RegisterTool(GetTerminateTool(), &TerminateExecutor{})
 		default:
 			return fmt.Errorf("unsupported built-in tool %s", agentTool.Name)

@@ -297,6 +297,7 @@ spec:
                 - http
                 - mcp
                 - agent
+                - builtin
                 type: string
             required:
             - type
